@@ -31,6 +31,11 @@ npm run dev      # API on :4000, client on :5173
 Locally `DATABASE_URL` defaults to a `file:` SQLite database under
 `server/data/`, so nothing external is needed to develop or run the tests.
 
+Configuration lives in **`server/.env`**, copied from `server/.env.example` —
+not a `.env` at the repository root. npm runs workspace scripts with the
+working directory set to `server/`, so a root-level `.env` is silently
+ignored.
+
 Seeded logins (both `password123`):
 
 - `admin@sunnybrook.test` — school administrator
@@ -40,6 +45,30 @@ Set `JWT_SECRET` in production; the server refuses to boot without it when
 `NODE_ENV=production`. See `.env.example`.
 
 ## Deploying to Vercel
+
+### Automated setup
+
+```bash
+./scripts/setup-deploy.sh
+```
+
+Creates (or reuses) the Turso database, mints a database token, generates a
+JWT secret, pushes all three to Vercel for production/preview/development,
+writes `server/.env` for local work, and verifies the deployed database is
+reachable and the schema applies. It is safe to re-run — every step checks for
+what already exists — and nothing is destructive unless you pass
+`--seed-remote`. It needs the `turso` and `vercel` CLIs installed and will tell
+you how to get them.
+
+Then `vercel --prod`.
+
+To check a deployment's database at any time:
+
+```bash
+DATABASE_URL=... DATABASE_AUTH_TOKEN=... node scripts/verify-db.mjs
+```
+
+### Manual setup
 
 The client is served as static files and the whole Express API runs as one
 serverless function at `api/[...path].js` — a catch-all, so Vercel routes every
@@ -78,9 +107,9 @@ remote.
 3. **Deploy.** The schema is created on the first request and memoised per
    instance, so no migration step is required; `npm run migrate` will do it
    ahead of time if you prefer. To load the demo school and roster, run
-   `npm run seed` locally with the deployed `DATABASE_URL` and
-   `DATABASE_AUTH_TOKEN` exported. **`seed` deletes all existing schools
-   first** — never point it at a database with real data.
+   `./scripts/setup-deploy.sh --seed-remote`. **Seeding deletes all existing
+   schools first** — the script makes you type the database name to confirm,
+   and you should never point it at a database with real data.
 
 Cookies are `secure` under `NODE_ENV=production`, which Vercel sets, and the
 client is same-origin with the API there, so CORS is only used by the split dev
@@ -246,6 +275,9 @@ server/src/
   index.js           local entry: listens on a port
   routes/            auth, classrooms, checkins, reports, kiosk
 api/[...path].js     Vercel entry: the same app as a serverless function
+scripts/
+  setup-deploy.sh    provisions Turso + Vercel env vars, idempotent
+  verify-db.mjs      connectivity/schema check for any configured database
 client/src/
   components/        Raccoon (morph rig), VineSlider, Flower, ProgressBar
   screens/           CheckInFlow, Kiosk, BoardLink, Dashboard, Meadow, Compliance,
