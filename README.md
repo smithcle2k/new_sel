@@ -13,20 +13,23 @@ a compliance table that cites their own state's early-childhood standards.
 | Animation | Framer Motion | Spring physics give the squash-and-stretch the toy aesthetic depends on. |
 | Styling | Hand-authored CSS design system (`styles/clay.css`) | The 3D clay look is the product. A utility or component framework would have fought it the whole way. |
 | API | Express (ESM) | Small, explicit surface; no framework magic between a request and its tenant check. |
-| Database | SQLite via `better-sqlite3` | Synchronous, in-process, single-digit-microsecond reads — no network hop on a check-in. A classroom's whole year is a few megabytes. |
+| Database | libSQL (Turso hosted, SQLite-compatible) | Runs on serverless, where the filesystem is read-only and per-instance so an on-disk SQLite file cannot work. libSQL keeps the SQLite dialect, so every query, upsert and `datetime()` modifier is unchanged. Local dev uses the same client against a `file:` URL. |
 | Auth | bcrypt + JWT in an httpOnly cookie | No third-party identity provider to depend on, and no token in JS reach. |
 | Audio | WebAudio oscillator/noise nodes | Zero audio files, so sound is instant on a cold cache and works offline. |
 
 There are **no external runtime requests at all** — no font CDN, no audio files,
 no analytics. A tablet on a locked-down school network renders identically.
 
-## Running it
+## Running it locally
 
 ```bash
 npm install
 npm run seed     # demo school, 10 children, a week of check-ins
 npm run dev      # API on :4000, client on :5173
 ```
+
+Locally `DATABASE_URL` defaults to a `file:` SQLite database under
+`server/data/`, so nothing external is needed to develop or run the tests.
 
 Seeded logins (both `password123`):
 
@@ -35,6 +38,53 @@ Seeded logins (both `password123`):
 
 Set `JWT_SECRET` in production; the server refuses to boot without it when
 `NODE_ENV=production`. See `.env.example`.
+
+## Deploying to Vercel
+
+The client is served as static files and the whole Express API runs as one
+serverless function at `api/[...path].js` — a catch-all, so Vercel routes every
+`/api/*` request to it with the original path intact rather than depending on a
+rewrite to reconstruct it. `vercel.json` supplies the build command, the output
+directory and an SPA fallback for client routes such as `/board`.
+
+An on-disk database cannot work here, and the failure is not subtle — a
+serverless filesystem is read-only outside `/tmp`, so opening a SQLite file
+throws during cold start and the platform reports `FUNCTION_INVOCATION_FAILED`.
+Even if it opened, `/tmp` is per-instance and wiped between invocations, so
+concurrent requests would see different databases. The database is therefore
+remote.
+
+1. **Create the database** (free tier is enough for a demo):
+
+   ```bash
+   turso db create my-day-buddy
+   turso db show my-day-buddy --url          # -> libsql://…turso.io
+   turso db tokens create my-day-buddy       # -> the auth token
+   ```
+
+2. **Set environment variables** in the Vercel project (all environments):
+
+   | Variable | Value |
+   | --- | --- |
+   | `DATABASE_URL` | `libsql://<database>-<org>.turso.io` |
+   | `DATABASE_AUTH_TOKEN` | the token from step 1 |
+   | `JWT_SECRET` | `openssl rand -base64 48` |
+
+   All three are checked at startup, and each missing one fails with a message
+   naming the fix rather than a bare stack trace. `NODE_ENV=production` plus a
+   `file:` `DATABASE_URL` is rejected outright, since that is the mistake that
+   produces the read-only crash above.
+
+3. **Deploy.** The schema is created on the first request and memoised per
+   instance, so no migration step is required; `npm run migrate` will do it
+   ahead of time if you prefer. To load the demo school and roster, run
+   `npm run seed` locally with the deployed `DATABASE_URL` and
+   `DATABASE_AUTH_TOKEN` exported. **`seed` deletes all existing schools
+   first** — never point it at a database with real data.
+
+Cookies are `secure` under `NODE_ENV=production`, which Vercel sets, and the
+client is same-origin with the API there, so CORS is only used by the split dev
+servers.
 
 ## Architecture
 
@@ -190,7 +240,12 @@ server/src/
   lib/scope.js       tenant isolation guards
   lib/auth.js        bcrypt, JWT, cookie, route guards
   lib/kiosk.js       device credentials: mint, hash, resolve, requireKiosk
+  lib/db.js          libSQL client, query helpers, schema, memoised ready()
+  lib/async.js       promise-rejection wrapper for Express 4 handlers
+  app.js             builds the Express app (no port) — shared by both entries
+  index.js           local entry: listens on a port
   routes/            auth, classrooms, checkins, reports, kiosk
+api/[...path].js     Vercel entry: the same app as a serverless function
 client/src/
   components/        Raccoon (morph rig), VineSlider, Flower, ProgressBar
   screens/           CheckInFlow, Kiosk, BoardLink, Dashboard, Meadow, Compliance,
@@ -201,7 +256,10 @@ client/src/
 
 ## Verification performed
 
-`npm run build` compiles clean (`tsc -b` + Vite). The full path — sign in →
+`npm run build` compiles clean (`tsc -b` + Vite). The serverless entry was
+exercised on a simulated cold instance — importing `api/[...path].js` without
+pre-warming and serving requests through it — to confirm the schema
+initialisation runs on the first request and not on every one. The full path — sign in →
 each dashboard tab → meadow popover → kiosk → customize → drag the vine across
 all five moods → hold to water → bloom → return — was driven end to end in
 headless Chromium with **zero console, page and network errors**. Tenant
@@ -224,6 +282,9 @@ lands back on its link screen. Results are the two tables above.
 - Revoking a board relies on a teacher noticing it is missing. Boards report a
   last-seen time, but nothing alerts on a board that goes quiet or one that
   appears from an unexpected network.
+- Every database call is now a network round trip. It is comfortably fast for
+  a classroom, but the compliance table fans out 1:N over indicators and would
+  want pagination before a school-wide, term-length export.
 - `/api/kiosk/claim` has no rate limit. The tokens are ~256 bits of entropy so
   guessing is not a practical threat, but a limiter would still be worth adding
   before exposing the endpoint publicly.

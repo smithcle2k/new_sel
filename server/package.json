@@ -6,11 +6,12 @@
   "scripts": {
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
-    "seed": "node src/seed.js"
+    "seed": "node src/seed.js",
+    "migrate": "node -e \"import('./src/lib/db.js').then(async m=>{const n=await m.ready().then(()=>m.get('SELECT COUNT(*) AS n FROM state_standards'));console.log('schema ready, indicators:',Number(n.n))})\""
   },
   "dependencies": {
+    "@libsql/client": "^0.17.4",
     "bcryptjs": "^2.4.3",
-    "better-sqlite3": "^11.7.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",

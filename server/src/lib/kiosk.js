@@ -15,23 +15,24 @@
  */
 import crypto from 'node:crypto';
 import { nanoid } from 'nanoid';
-import { db } from './db.js';
+import { get, run } from './db.js';
 
 export const KIOSK_COOKIE = 'mdb_kiosk';
 
 const hashToken = (raw) => crypto.createHash('sha256').update(raw).digest('hex');
 
 /** Mint a device credential. The plaintext is returned once and never stored. */
-export function mintDevice({ schoolId, classroomId, label, createdBy, days }) {
+export async function mintDevice({ schoolId, classroomId, label, createdBy, days }) {
   const raw = nanoid(43);
   const id = nanoid();
-  db.prepare(`
-    INSERT INTO kiosk_devices
-      (id, school_id, classroom_id, label, token_hash, created_by, expires_at)
-    VALUES (?, ?, ?, ?, ?, ?, datetime('now', ?))
-  `).run(id, schoolId, classroomId, label, hashToken(raw), createdBy, `+${days} days`);
+  await run(
+    `INSERT INTO kiosk_devices
+       (id, school_id, classroom_id, label, token_hash, created_by, expires_at)
+     VALUES (?, ?, ?, ?, ?, ?, datetime('now', ?))`,
+    [id, schoolId, classroomId, label, hashToken(raw), createdBy, `+${days} days`],
+  );
 
-  const device = db.prepare('SELECT * FROM kiosk_devices WHERE id = ?').get(id);
+  const device = await get('SELECT * FROM kiosk_devices WHERE id = ?', [id]);
   return { device: publicDevice(device), token: raw };
 }
 
@@ -53,9 +54,9 @@ const isExpired = (device) => new Date(`${device.expires_at}Z`) <= new Date();
  * checked here on every request, so revoking a lost board takes effect on its
  * very next call rather than whenever some token would have expired.
  */
-export function resolveDevice(raw) {
+export async function resolveDevice(raw) {
   if (!raw || typeof raw !== 'string') return null;
-  const device = db.prepare('SELECT * FROM kiosk_devices WHERE token_hash = ?').get(hashToken(raw));
+  const device = await get('SELECT * FROM kiosk_devices WHERE token_hash = ?', [hashToken(raw)]);
   if (!device || device.revoked_at || isExpired(device)) return null;
   return device;
 }
@@ -75,13 +76,17 @@ export function setKioskCookie(res, raw, device) {
  * no staff-only handler can ever be reached with a board credential even if
  * one were mounted on the wrong router by mistake.
  */
-export function requireKiosk(req, res, next) {
-  const device = resolveDevice(req.cookies?.[KIOSK_COOKIE]);
-  if (!device) {
-    res.clearCookie(KIOSK_COOKIE);
-    return res.status(401).json({ error: 'This board is not linked. Ask a teacher for a new board link.' });
+export async function requireKiosk(req, res, next) {
+  try {
+    const device = await resolveDevice(req.cookies?.[KIOSK_COOKIE]);
+    if (!device) {
+      res.clearCookie(KIOSK_COOKIE);
+      return res.status(401).json({ error: 'This board is not linked. Ask a teacher for a new board link.' });
+    }
+    await run("UPDATE kiosk_devices SET last_seen_at = datetime('now') WHERE id = ?", [device.id]);
+    req.device = device;
+    next();
+  } catch (err) {
+    next(err);
   }
-  db.prepare("UPDATE kiosk_devices SET last_seen_at = datetime('now') WHERE id = ?").run(device.id);
-  req.device = device;
-  next();
 }

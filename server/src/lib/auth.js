@@ -1,13 +1,19 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { db } from './db.js';
+import { get } from './db.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-only-insecure-secret-change-me';
 const TOKEN_TTL = '12h';
 export const AUTH_COOKIE = 'mdb_session';
 
+// Fail loudly rather than silently signing sessions with a known dev secret.
+// On a serverless platform this surfaces as a function invocation failure, so
+// the message has to say exactly what to do about it.
 if (!process.env.JWT_SECRET && process.env.NODE_ENV === 'production') {
-  throw new Error('JWT_SECRET must be set in production.');
+  throw new Error(
+    'JWT_SECRET is not set. Generate one with `openssl rand -base64 48` and add it to the ' +
+    "deployment's environment variables, then redeploy.",
+  );
 }
 
 export const hashPassword = (plain) => bcrypt.hashSync(plain, 12);
@@ -40,7 +46,7 @@ function readToken(req) {
  * Authenticates the request and attaches `req.user`. Every non-public route
  * goes through this, so no handler ever sees an unauthenticated caller.
  */
-export function requireAuth(req, res, next) {
+export async function requireAuth(req, res, next) {
   const token = readToken(req);
   if (!token) return res.status(401).json({ error: 'Not signed in.' });
   let claims;
@@ -49,12 +55,16 @@ export function requireAuth(req, res, next) {
   } catch {
     return res.status(401).json({ error: 'Session expired. Please sign in again.' });
   }
-  const user = db
-    .prepare('SELECT id, school_id, email, full_name, role FROM users WHERE id = ?')
-    .get(claims.sub);
-  if (!user) return res.status(401).json({ error: 'Account no longer exists.' });
-  req.user = user;
-  next();
+  try {
+    const user = await get(
+      'SELECT id, school_id, email, full_name, role FROM users WHERE id = ?', [claims.sub],
+    );
+    if (!user) return res.status(401).json({ error: 'Account no longer exists.' });
+    req.user = user;
+    next();
+  } catch (err) {
+    next(err);
+  }
 }
 
 /**
@@ -62,14 +72,14 @@ export function requireAuth(req, res, next) {
  * the session probe, so a signed-out visitor is an ordinary 200 rather than a
  * 401 the browser logs as a console error on every cold load.
  */
-export function optionalAuth(req, _res, next) {
+export async function optionalAuth(req, _res, next) {
   const token = readToken(req);
   if (token) {
     try {
       const claims = jwt.verify(token, JWT_SECRET);
-      req.user = db
-        .prepare('SELECT id, school_id, email, full_name, role FROM users WHERE id = ?')
-        .get(claims.sub) || undefined;
+      req.user = await get(
+        'SELECT id, school_id, email, full_name, role FROM users WHERE id = ?', [claims.sub],
+      ) || undefined;
     } catch {
       /* an expired or forged cookie simply means "signed out" here */
     }
