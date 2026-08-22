@@ -1,0 +1,242 @@
+/* ==========================================================================
+   The child-facing kiosk. Zero text: every control is an object or a colour.
+   Sized for wall-mounted smartboards first, tablets second.
+   ========================================================================== */
+
+.kiosk {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(0.8rem, 2vh, 1.6rem);
+  padding: clamp(0.9rem, 2.5vw, 2rem);
+  touch-action: manipulation;
+}
+
+.kiosk__card {
+  flex: 1;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(0.8rem, 2.4vh, 2rem);
+  padding: clamp(1rem, 3vw, 2.5rem);
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse at 50% 118%, #b7ec8f 0%, #d9f7c0 42%, transparent 43%),
+    var(--paper);
+}
+
+/* --------------------------- step 1: customizer -------------------------- */
+
+.swatches {
+  display: flex;
+  gap: clamp(0.6rem, 1.6vw, 1.2rem);
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.swatch {
+  width: clamp(64px, 9vw, 104px);
+  aspect-ratio: 1;
+  border: var(--stroke) solid var(--ink);
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: var(--shadow-mid), inset 0 -10px 0 rgba(0, 0, 0, 0.16), inset 0 10px 0 rgba(255, 255, 255, 0.35);
+  transition: transform 110ms cubic-bezier(.34,1.56,.64,1), box-shadow 110ms ease;
+  touch-action: manipulation;
+}
+.swatch:active { transform: translateY(7px) scale(0.94); box-shadow: var(--shadow-press); }
+.swatch[aria-pressed='true'] { transform: translateY(-8px) scale(1.1); }
+.swatch:focus-visible { outline: 5px dashed var(--grape); outline-offset: 6px; }
+
+.hat-picker { display: flex; gap: clamp(0.7rem, 2vw, 1.5rem); flex-wrap: wrap; justify-content: center; }
+.hat-btn {
+  display: grid;
+  place-items: center;
+  width: clamp(96px, 13vw, 150px);
+  aspect-ratio: 1;
+  padding: 0.5rem;
+  background: #fff;
+  border: var(--stroke) solid var(--ink);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  box-shadow: var(--shadow-mid);
+  transition: transform 110ms cubic-bezier(.34,1.56,.64,1), box-shadow 110ms ease, background 160ms ease;
+  touch-action: manipulation;
+}
+.hat-btn:active { transform: translateY(7px) scale(0.95); box-shadow: var(--shadow-press); }
+.hat-btn[aria-pressed='true'] { background: var(--sun); transform: translateY(-7px); }
+.hat-btn:focus-visible { outline: 5px dashed var(--grape); outline-offset: 6px; }
+.hat-btn svg { width: 100%; height: 100%; }
+
+/* ----------------------------- step 2: vine ------------------------------ */
+
+.vine {
+  position: relative;
+  width: min(1100px, 96%);
+  /* An oversized channel: the whole band is the target, so a smartboard tap
+     anywhere along it lands, with no dead zones between stops. */
+  height: clamp(130px, 19vh, 200px);
+  cursor: grab;
+  touch-action: none;   /* we own the gesture via pointer capture */
+  user-select: none;
+}
+.vine:active { cursor: grabbing; }
+.vine svg { width: 100%; height: 100%; overflow: visible; display: block; }
+
+.vine__knob {
+  filter: drop-shadow(0 9px 0 rgba(59, 42, 74, 0.28)) drop-shadow(0 16px 18px rgba(59, 42, 74, 0.22));
+  transition: filter 110ms ease;
+}
+.vine:active .vine__knob { filter: drop-shadow(0 3px 0 rgba(59, 42, 74, 0.3)); }
+
+/* --------------------------- step 3: the garden -------------------------- */
+
+.garden {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: clamp(1rem, 4vw, 3.5rem);
+  flex-wrap: wrap;
+}
+.soil-patch {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: clamp(200px, 30vw, 330px);
+  height: clamp(170px, 24vh, 260px);
+  overflow: hidden;
+  background:
+    repeating-linear-gradient(90deg, rgba(0,0,0,0.05) 0 2px, transparent 2px 46px),
+    linear-gradient(180deg, var(--soil) 0%, var(--soil-deep) 100%);
+  border: var(--stroke) solid var(--ink);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-deep), inset 0 12px 0 rgba(0, 0, 0, 0.18);
+}
+
+.can-btn {
+  display: grid;
+  place-items: center;
+  width: clamp(180px, 26vw, 280px);
+  padding: clamp(0.8rem, 2vw, 1.4rem);
+  background: var(--water);
+  border: var(--stroke) solid var(--ink);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  box-shadow: var(--shadow-deep);
+  transition: transform 90ms cubic-bezier(.34,1.56,.64,1), box-shadow 90ms ease;
+  touch-action: none;
+  user-select: none;
+}
+.can-btn[data-pouring='true'] { transform: translateY(9px) rotate(-16deg) scale(0.97); box-shadow: var(--shadow-press); }
+.can-btn:focus-visible { outline: 5px dashed var(--grape); outline-offset: 6px; }
+
+.water-meter {
+  width: clamp(200px, 30vw, 330px);
+  height: 30px;
+  margin-top: 0.9rem;
+  overflow: hidden;
+  background: #fff;
+  border: 4px solid var(--ink);
+  border-radius: 999px;
+  box-shadow: var(--shadow-press);
+}
+.water-meter__fill {
+  height: 100%;
+  background: repeating-linear-gradient(115deg, var(--water) 0 16px, #7fd0ff 16px 32px);
+  transition: width 90ms linear;
+}
+
+.droplet { position: absolute; pointer-events: none; }
+
+/* ---------------------------- step 4: the bloom -------------------------- */
+
+.sparkle { position: absolute; pointer-events: none; }
+
+.bloom-stage {
+  display: grid;
+  place-items: center;
+  width: min(680px, 96%);
+  min-height: clamp(240px, 38vh, 420px);
+}
+
+/* ------------------------- kiosk chrome / roster ------------------------- */
+
+.kiosk__nav { display: flex; align-items: center; gap: 1rem; }
+
+.child-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: clamp(0.9rem, 2vw, 1.6rem);
+}
+.child-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1rem 0.7rem 1.2rem;
+  background: var(--paper);
+  border: var(--stroke) solid var(--ink);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  box-shadow: var(--shadow-mid);
+  transition: transform 120ms cubic-bezier(.34,1.56,.64,1), box-shadow 120ms ease;
+  touch-action: manipulation;
+}
+.child-tile:active { transform: translateY(7px) scale(0.97); box-shadow: var(--shadow-press); }
+.child-tile[data-done='true'] { background: #ddf6cf; }
+.child-tile__name { font-family: var(--font-round); font-weight: 800; font-size: 1.35rem; }
+
+/* --------------------------- meadow (dashboard) -------------------------- */
+
+.meadow {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: clamp(0.6rem, 2vw, 1.6rem);
+  min-height: 340px;
+  padding: clamp(1rem, 3vw, 2.5rem) clamp(1rem, 3vw, 2rem) clamp(1.6rem, 4vw, 3rem);
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, #cdeaff 0%, #e8f8ff 38%, var(--grass) 38%, var(--grass-deep) 100%);
+  border: var(--stroke) solid var(--ink);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-deep);
+}
+.meadow__plot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.6rem;
+  background: rgba(255, 255, 255, 0.4);
+  border: 4px solid var(--ink);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  box-shadow: var(--shadow-press);
+  transition: transform 130ms cubic-bezier(.34,1.56,.64,1);
+}
+.meadow__plot:hover { transform: translateY(-6px); }
+.meadow__plot:active { transform: translateY(4px) scale(0.97); }
+.meadow__name { font-family: var(--font-round); font-weight: 800; font-size: 1rem; }
+.meadow__row { display: flex; align-items: flex-end; gap: 2px; }
+
+.popover-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background: rgba(59, 42, 74, 0.45);
+}
+.popover {
+  width: min(460px, 100%);
+  padding: 1.6rem;
+  text-align: center;
+  background: var(--paper);
+  border: var(--stroke) solid var(--ink);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-deep);
+}
