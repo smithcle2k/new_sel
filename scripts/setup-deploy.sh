@@ -40,12 +40,21 @@ die()  { printf '\033[31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
 
 bold "Checking prerequisites"
 
-if ! command -v turso >/dev/null 2>&1; then
-  die "The Turso CLI is not installed. Install it, then re-run:
+TURSO_INSTALL_HINT="Install the Turso platform CLI, then re-run:
        curl -sSfL https://get.tur.so/install.sh | bash
-     (then restart your shell, or source the line it adds to your profile)"
+     (then restart your shell, or source the line it adds to your profile)
+     Note: 'npm i -g turso' installs a DIFFERENT tool - the local SQL shell
+     (tursodb) - which has no 'db create'. It will not work here."
+
+if ! command -v turso >/dev/null 2>&1; then
+  die "The Turso CLI is not installed. $TURSO_INSTALL_HINT"
 fi
-ok "turso CLI"
+# Confirm this is the platform CLI and not the same-named local SQL shell.
+if ! turso db --help >/dev/null 2>&1; then
+  die "'$(command -v turso)' is not the Turso platform CLI - it has no 'db' command.
+     $TURSO_INSTALL_HINT"
+fi
+ok "turso CLI (platform)"
 
 if ! command -v vercel >/dev/null 2>&1; then
   die "The Vercel CLI is not installed. Install it, then re-run:
@@ -112,25 +121,36 @@ ok "wrote $LOCAL_ENV (local DB stays a local file)"
 bold "Vercel project"
 if [ ! -f .vercel/project.json ]; then
   warn "This directory is not linked to a Vercel project yet."
+  warn "vercel link is interactive - answer its prompts to pick the project."
   vercel link
 fi
 ok "linked: $(node -pe "require('./.vercel/project.json').projectId" 2>/dev/null || echo 'unknown')"
 
+# `--force` overwrites an existing value, so re-runs update in place instead of
+# failing on a duplicate. The value goes in on stdin rather than via --value so
+# it never appears in the process list or shell history. Secrets are marked
+# --sensitive, which Vercel supports for production and preview only.
 set_env() {
-  local name="$1" value="$2" target
+  local name="$1" value="$2" sensitive="${3:-0}" target flags
   for target in production preview development; do
-    # Remove first so re-runs update rather than fail on a duplicate.
-    vercel env rm "$name" "$target" --yes >/dev/null 2>&1 || true
-    printf '%s' "$value" | vercel env add "$name" "$target" >/dev/null 2>&1 \
-      || die "Failed to set $name for $target."
+    flags="--force"
+    if [ "$sensitive" = "1" ] && [ "$target" != "development" ]; then
+      flags="$flags --sensitive"
+    fi
+    # shellcheck disable=SC2086
+    if ! printf '%s' "$value" | vercel env add "$name" "$target" $flags >/dev/null 2>&1; then
+      die "Failed to set $name for $target. Run the same command without the
+     output redirect to see why:
+       printf '%%s' \"\$VALUE\" | vercel env add $name $target $flags"
+    fi
   done
   ok "$name set for production, preview and development"
 }
 
 bold "Pushing environment variables"
-set_env DATABASE_URL        "$DATABASE_URL"
-set_env DATABASE_AUTH_TOKEN "$DATABASE_AUTH_TOKEN"
-set_env JWT_SECRET          "$JWT_SECRET"
+set_env DATABASE_URL        "$DATABASE_URL"        0
+set_env DATABASE_AUTH_TOKEN "$DATABASE_AUTH_TOKEN"  1
+set_env JWT_SECRET          "$JWT_SECRET"           1
 
 # ------------------------------------------------------------- verify/seed --
 

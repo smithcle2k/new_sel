@@ -57,8 +57,17 @@ JWT secret, pushes all three to Vercel for production/preview/development,
 writes `server/.env` for local work, and verifies the deployed database is
 reachable and the schema applies. It is safe to re-run — every step checks for
 what already exists — and nothing is destructive unless you pass
-`--seed-remote`. It needs the `turso` and `vercel` CLIs installed and will tell
-you how to get them.
+`--seed-remote`.
+
+It needs two CLIs. Install the Turso **platform** CLI with
+`curl -sSfL https://get.tur.so/install.sh | bash` — note that `npm i -g turso`
+installs a different tool of the same name (the local `tursodb` SQL shell,
+which has no `db create`); the script detects that case and says so. Install
+Vercel's with `npm i -g vercel`.
+
+Secrets go to Vercel on stdin rather than as command arguments, so they never
+land in the process list or shell history, and `DATABASE_AUTH_TOKEN` and
+`JWT_SECRET` are stored `--sensitive` (write-only) for production and preview.
 
 Then `vercel --prod`.
 
