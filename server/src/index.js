@@ -9,6 +9,7 @@ import { authRouter } from './routes/auth.js';
 import { classroomRouter } from './routes/classrooms.js';
 import { checkinRouter } from './routes/checkins.js';
 import { reportRouter } from './routes/reports.js';
+import { deviceAdminRouter, kioskRouter } from './routes/kiosk.js';
 
 const PORT = Number(process.env.PORT || 4000);
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
@@ -23,6 +24,8 @@ app.use('/api/auth', authRouter);
 app.use('/api/classrooms', classroomRouter);
 app.use('/api/checkins', checkinRouter);
 app.use('/api/reports', reportRouter);
+app.use('/api/kiosk', kioskRouter);
+app.use('/api/devices', deviceAdminRouter);
 
 app.use((_req, res) => res.status(404).json({ error: 'Not found.' }));
 

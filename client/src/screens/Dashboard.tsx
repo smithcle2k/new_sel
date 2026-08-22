@@ -6,8 +6,9 @@ import { MeadowView } from './Meadow';
 import { ComplianceView } from './Compliance';
 import { RosterView } from './Roster';
 import { AdminView } from './Admin';
+import { BoardsView } from './Boards';
 
-type Tab = 'meadow' | 'compliance' | 'roster' | 'school';
+type Tab = 'meadow' | 'compliance' | 'roster' | 'boards' | 'school';
 
 /**
  * The teacher's home. A classroom picker sits above every tab, because the
@@ -55,6 +56,7 @@ export function Dashboard() {
     { id: 'meadow', label: 'Classroom Meadow' },
     { id: 'compliance', label: 'Compliance' },
     { id: 'roster', label: 'Roster' },
+    { id: 'boards', label: 'Boards' },
     ...(user?.role === 'admin' ? [{ id: 'school' as Tab, label: 'School & Staff' }] : []),
   ];
 
@@ -96,7 +98,7 @@ export function Dashboard() {
         <div className="spacer" />
         {active && (
           <button className="clay-btn clay-btn--berry" onClick={() => navigate(`/kiosk/${active.id}`)}>
-            ▶ Start check-in kiosk
+            ▶ Preview check-in
           </button>
         )}
       </div>
@@ -121,6 +123,7 @@ export function Dashboard() {
       {active && tab === 'meadow' && <MeadowView classroom={active} />}
       {active && tab === 'compliance' && <ComplianceView classroom={active} state={school?.state ?? ''} />}
       {active && tab === 'roster' && <RosterView classroom={active} onChanged={loadClassrooms} />}
+      {active && tab === 'boards' && <BoardsView classroom={active} />}
       {tab === 'school' && <AdminView />}
     </div>
   );

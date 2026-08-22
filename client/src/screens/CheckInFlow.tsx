@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Raccoon } from '../components/Raccoon';
 import { VineSlider } from '../components/VineSlider';
 import { Flower } from '../components/Flower';
 import { ProgressBar } from '../components/ProgressBar';
-import { api, type HatId, type TodayStudent } from '../lib/api';
+import { type HatId, type TodayStudent } from '../lib/api';
+import { kioskSource } from '../lib/kiosk-source';
 import { moodFor } from '../lib/moods';
 import {
   playCheer, playMoodTone, playPop, playSparkle, playThud, startWaterSound, unlockAudio,
@@ -67,8 +68,9 @@ function HatIcon({ hat }: { hat: Exclude<HatId, 'none'> }) {
 /* -------------------------------- the flow ------------------------------- */
 
 export function CheckInFlow() {
-  const { classroomId, studentId } = useParams();
+  const { classroomId, studentId } = useParams();   // classroomId absent on a board
   const navigate = useNavigate();
+  const source = useMemo(() => kioskSource(classroomId), [classroomId]);
 
   const [student, setStudent] = useState<TodayStudent | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -91,8 +93,8 @@ export function CheckInFlow() {
 
   useEffect(() => {
     let alive = true;
-    api.get<{ students: TodayStudent[] }>(`/checkins/classroom/${classroomId}/today`)
-      .then(({ students }) => {
+    source.loadToday()
+      .then(({ students }: { students: TodayStudent[] }) => {
         if (!alive) return;
         const found = students.find((s) => s.id === studentId);
         if (!found) { setLoadError('We could not find that child on this roster.'); return; }
@@ -100,9 +102,16 @@ export function CheckInFlow() {
         setFur(found.fur_color);
         setHat(found.hat);
       })
-      .catch((e) => alive && setLoadError(e.message));
+      .catch((e) => {
+        if (!alive) return;
+        if (source.mode === 'board' && e.status === 401) {
+          navigate('/board/link', { replace: true, state: { expired: true } });
+          return;
+        }
+        setLoadError(e.message);
+      });
     return () => { alive = false; };
-  }, [classroomId, studentId]);
+  }, [source, studentId, navigate]);
 
   // Release audio, haptics and the animation frame no matter how we leave.
   useEffect(() => () => {
@@ -181,12 +190,11 @@ export function CheckInFlow() {
     celebrateHaptic();
     window.setTimeout(playCheer, 420);
 
-    api.post('/checkins', {
-      studentId, moodScore: score, furColor: fur, hat,
-    }).catch((e) => setSaveError(e.message));
+    source.submitCheckin({ studentId: studentId!, moodScore: score, furColor: fur, hat })
+      .catch((e) => setSaveError(e.message));
   };
 
-  const finish = () => navigate(`/kiosk/${classroomId}`);
+  const finish = () => navigate(source.rosterPath);
 
   /* -------------------------------- render ------------------------------- */
 
@@ -195,7 +203,7 @@ export function CheckInFlow() {
       <div className="center-page">
         <div className="clay" style={{ padding: '2rem', maxWidth: 460 }}>
           <div className="alert">{loadError}</div>
-          <button className="clay-btn clay-btn--block" onClick={() => navigate(`/kiosk/${classroomId}`)}>
+          <button className="clay-btn clay-btn--block" onClick={() => navigate(source.rosterPath)}>
             Back to the roster
           </button>
         </div>

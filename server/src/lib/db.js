@@ -82,6 +82,30 @@ CREATE TABLE IF NOT EXISTS checkins (
 );
 CREATE INDEX IF NOT EXISTS idx_checkins_classroom_date ON checkins(classroom_id, checkin_date);
 
+-- Device-scoped kiosk credentials.
+--
+-- A wall-mounted board must not hold a staff session: that session can read
+-- every classroom the teacher owns, the compliance tables and the staff list,
+-- and it sits on an unattended screen overnight. A kiosk device instead holds
+-- its own credential, bound to exactly one classroom, which grants nothing but
+-- that room's roster and the ability to record a check-in.
+--
+-- Only the SHA-256 of the token is stored. The plaintext is shown once, at
+-- mint time, and is never recoverable from the database.
+CREATE TABLE IF NOT EXISTS kiosk_devices (
+  id           TEXT PRIMARY KEY,
+  school_id    TEXT NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+  classroom_id TEXT NOT NULL REFERENCES classrooms(id) ON DELETE CASCADE,
+  label        TEXT NOT NULL,
+  token_hash   TEXT NOT NULL UNIQUE,
+  created_by   TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  expires_at   TEXT NOT NULL,
+  revoked_at   TEXT,
+  last_seen_at TEXT,
+  created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_kiosk_classroom ON kiosk_devices(classroom_id);
+
 -- The compliance engine's lookup table. Reference data, seeded from
 -- lib/standards.js and re-synced on every boot so citations stay authoritative.
 CREATE TABLE IF NOT EXISTS state_standards (

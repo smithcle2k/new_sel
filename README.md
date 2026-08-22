@@ -56,6 +56,47 @@ Verified behaviour:
 | School administrator | Any classroom in their school | 200 |
 | Unauthenticated | Anything | 401 |
 
+### Device-scoped board credentials
+
+A wall-mounted board must not hold a staff session — that session can read
+every classroom its teacher owns, the compliance tables and the staff list, and
+it sits unattended on a screen overnight. Boards therefore carry their own
+credential, minted per device from the **Boards** tab and bound to exactly one
+classroom.
+
+- Only the SHA-256 of the token is stored. The plaintext is shown **once**, at
+  mint time, and is not recoverable. Tokens are 43 characters of `nanoid`
+  entropy, so a fast digest is the right primitive: a password KDF buys nothing
+  against an unguessable secret and would cost a stretch on every request.
+- Opening `/board/link/<token>` exchanges the token for an httpOnly cookie and
+  `replace`s the history entry. A board's address bar sits at child height on a
+  wall; a token left in the URL or in history can be read, or photographed,
+  from across the room.
+- The credential lives under its own cookie name (`mdb_kiosk`), so it is
+  structurally incapable of satisfying `requireAuth`. Board endpoints attach
+  `req.device` and never `req.user`.
+- Revocation and expiry are re-checked on **every** request, so revoking a lost
+  board takes effect on its next call rather than whenever a token would have
+  expired.
+
+Verified behaviour:
+
+| Caller | Target | Result |
+| --- | --- | --- |
+| Board credential | its own roster / check-in | 200 / 201 |
+| Board credential | a child in another classroom | 404 |
+| Board credential | staff list, classrooms, reports, device admin | 401 |
+| Board credential | presented as a `Bearer` token | 401 |
+| Board credential | `/api/auth/me` | 200 with `user: null` — discloses nothing |
+| Revoked or expired board | anything | 401, and the board returns to its link screen |
+| Teacher, another school | minting / listing / revoking boards | 404 |
+
+A board that loses its credential mid-day falls back to the link screen, not to
+a sign-in page — there is no staff account for it to sign in to. Teachers can
+still preview the flow from their dashboard under their own session; the kiosk
+screens take their credential from a small source abstraction
+(`lib/kiosk-source.ts`) and are otherwise identical in both modes.
+
 ### The state-compliance engine
 
 Check-ins store only the raw 1–5 score. Standard codes are joined **at read
@@ -134,6 +175,8 @@ haptic.
   range, exportable as CSV.
 - **Roster** — register children, pre-set their companion, archive leavers
   (their history stays in reports).
+- **Boards** — mint, inspect and revoke the device links for this classroom,
+  with each board's last-seen time.
 - **School & Staff** (admin only) — home state, staff list, and teacher
   invitations. Invite links are surfaced for the administrator to send
   themselves; the app deliberately does not send mail on their behalf.
@@ -146,11 +189,13 @@ server/src/
   lib/db.js          schema + idempotent standards sync
   lib/scope.js       tenant isolation guards
   lib/auth.js        bcrypt, JWT, cookie, route guards
-  routes/            auth, classrooms, checkins, reports
+  lib/kiosk.js       device credentials: mint, hash, resolve, requireKiosk
+  routes/            auth, classrooms, checkins, reports, kiosk
 client/src/
   components/        Raccoon (morph rig), VineSlider, Flower, ProgressBar
-  screens/           CheckInFlow, Kiosk, Dashboard, Meadow, Compliance, Roster, Admin, Auth
-  lib/               api client, WebAudio synth, haptics, mood model
+  screens/           CheckInFlow, Kiosk, BoardLink, Dashboard, Meadow, Compliance,
+                     Roster, Boards, Admin, Auth
+  lib/               api client, kiosk source, WebAudio synth, haptics, mood model
   styles/            clay.css (design system), kiosk.css (child UI)
 ```
 
@@ -161,7 +206,14 @@ each dashboard tab → meadow popover → kiosk → customize → drag the vine 
 all five moods → hold to water → bloom → return — was driven end to end in
 headless Chromium with **zero console, page and network errors**. Tenant
 isolation was exercised directly against the API with a second school and a
-second teacher; results are the table above.
+second teacher.
+
+The board lifecycle was driven in a second, entirely separate browser context
+holding no staff session: claim a link → confirm the token is gone from the URL
+and from history → confirm the only cookie is `mdb_kiosk`, httpOnly and
+unreadable from page JS → confirm `/dashboard` bounces to sign-in → complete a
+child's check-in → revoke from the teacher's dashboard → confirm the board
+lands back on its link screen. Results are the two tables above.
 
 ## Known limitations
 
@@ -169,6 +221,9 @@ second teacher; results are the table above.
   an SMTP or transactional-mail provider is the natural next step.
 - `state_standards` is reference data keyed by state code; supporting a sixth
   state means adding a block to `standards.js` and restarting.
-- The kiosk sits behind the teacher's session (they sign in once in the
-  morning). A dedicated device-scoped kiosk token would be better for boards
-  left unattended overnight.
+- Revoking a board relies on a teacher noticing it is missing. Boards report a
+  last-seen time, but nothing alerts on a board that goes quiet or one that
+  appears from an unexpected network.
+- `/api/kiosk/claim` has no rate limit. The tokens are ~256 bits of entropy so
+  guessing is not a practical threat, but a limiter would still be worth adding
+  before exposing the endpoint publicly.
